@@ -88,6 +88,7 @@ fn update_short_message(short: tl::types::UpdateShortMessage) -> tl::types::Upda
                 quick_reply_shortcut_id: None,
                 offline: false,
                 via_business_bot_id: None,
+                guestchat_via_from: None,
                 effect: None,
                 factcheck: None,
                 report_delivery_until_date: None,
@@ -159,6 +160,7 @@ fn update_short_chat_message(
                 quick_reply_shortcut_id: None,
                 offline: false,
                 via_business_bot_id: None,
+                guestchat_via_from: None,
                 effect: None,
                 factcheck: None,
                 report_delivery_until_date: None,
@@ -273,6 +275,7 @@ pub(super) fn adapt(updates: UpdatesLike) -> Result<tl::types::UpdatesCombined, 
                         fwd_from: None,
                         via_bot_id: None,
                         via_business_bot_id: None,
+                        guestchat_via_from: None,
                         reply_to: request
                             .reply_to
                             .map(|r| match r {

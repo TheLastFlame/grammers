@@ -421,6 +421,7 @@ impl<F: Future<Output = BuilderRes>> BannedRightsBuilder<F> {
                     send_docs: false,
                     send_plain: false,
                     edit_rank: false,
+                    send_reactions: false,
                     until_date: 0,
                 },
             }),

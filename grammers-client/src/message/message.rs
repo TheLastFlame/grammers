@@ -118,6 +118,7 @@ impl Message {
                 reactions: None,
                 quick_reply_shortcut_id: None,
                 via_business_bot_id: None,
+                guestchat_via_from: None,
                 offline: false,
                 effect: None,
                 factcheck: None,
