@@ -293,7 +293,7 @@ impl ProfilePhotoIter {
                 };
 
                 // Don't bother updating offsets if this is the last time stuff has to be fetched.
-                if !iter.last_chunk && !iter.buffer.is_empty() {
+                if !iter.last_chunk && !photos.is_empty() {
                     iter.request.offset += photos.len() as i32;
                 }
 
