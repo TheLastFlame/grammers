@@ -1,0 +1,50 @@
+name: Mirror from Codeberg
+
+on:
+  schedule:
+    - cron: '0 0 * * *' # Раз в день в 00:00 UTC
+  workflow_dispatch:
+
+jobs:
+  mirror_to_github:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout GitHub repo
+        uses: actions/checkout@v4
+        with:
+          path: github_repo
+
+      - name: Check for updates and mirror
+        run: |
+          UPSTREAM_COMMIT=$(git ls-remote https://codeberg.org/Lonami/grammers.git refs/heads/master | awk '{ print $1 }')
+          
+          LOCAL_COMMIT=$(cat github_repo/.upstream_commit 2>/dev/null || echo "none")
+          
+          if [ "$UPSTREAM_COMMIT" == "$LOCAL_COMMIT" ]; then
+            echo "Изменений нет"
+            exit 0
+          fi
+                    
+          git clone https://codeberg.org/Lonami/grammers.git codeberg_repo
+          
+          cp -r github_repo/.github codeberg_repo/
+          
+          echo "$UPSTREAM_COMMIT" > codeberg_repo/.upstream_commit
+          
+          cd codeberg_repo
+          
+          BADGE="[![Ask DeepWiki](https://deepwiki.com/badge.svg)](https://deepwiki.com/TheLastFlame/grammers)"
+          BANNER="> **ВНИМАНИЕ:** Этот репо лишь зеркало с Codeberg (https://codeberg.org/Lonami/grammers) на Github, для использования с Copilot и DeepWiki."
+          
+          echo -e "$BADGE\n\n$BANNER\n\n$(cat README.md)" > tmp_readme.md
+          mv tmp_readme.md README.md
+          
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          
+          git add .github .upstream_commit README.md
+          git commit -m "chore: update mirror to upstream $UPSTREAM_COMMIT"
+          
+          git remote set-url origin https://x-access-token:${{ secrets.PAT }}@github.com/TheLastFlame/grammers.git
+          
+          git push --force origin master
