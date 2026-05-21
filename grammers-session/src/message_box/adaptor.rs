@@ -363,10 +363,11 @@ pub(super) fn adapt(updates: UpdatesLike) -> Result<tl::types::UpdatesCombined, 
         UpdatesLike::AffectedChannelMessages {
             affected,
             channel_id,
+            message_ids,
         } => Ok(update_short(tl::types::UpdateShort {
             update: tl::types::UpdateDeleteChannelMessages {
                 channel_id,
-                messages: Vec::new(),
+                messages: message_ids,
                 pts: affected.pts,
                 pts_count: affected.pts_count,
             }

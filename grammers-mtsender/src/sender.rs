@@ -17,7 +17,7 @@ use grammers_mtproto::mtp::{
 use grammers_mtproto::transport::{self, Transport};
 use grammers_mtproto::{MsgId, authentication};
 use grammers_session::updates::UpdatesLike;
-use grammers_tl_types::{self as tl, Deserializable, Identifiable, RemoteCall};
+use grammers_tl_types::{self as tl, Deserializable, RemoteCall};
 use log::{debug, error, info, trace, warn};
 use tl::Serializable;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
@@ -443,25 +443,22 @@ impl<T: Transport, M: Mtp> Sender<T, M> {
                 // Check if the original request targeted a channel (e.g. channels.deleteMessages).
                 // If so, the pts belongs to that channel, not the common/user pts sequence.
                 let channel_id = self.peek_request(msg_id).and_then(|request| {
-                    let body = &request.body;
-                    if body.len() < 4 {
-                        return None;
-                    }
-                    let constructor_id = u32::from_le_bytes([body[0], body[1], body[2], body[3]]);
-                    if constructor_id != tl::functions::channels::DeleteMessages::CONSTRUCTOR_ID {
-                        return None;
-                    }
-                    // After the 4-byte constructor ID, the first field is InputChannel.
-                    let channel = tl::enums::InputChannel::from_bytes(&body[4..]).ok()?;
-                    match channel {
-                        tl::enums::InputChannel::Channel(c) => Some(c.channel_id),
+                    let request =
+                        match tl::functions::channels::DeleteMessages::from_bytes(&request.body) {
+                            Ok(r) => r,
+                            Err(_) => return None,
+                        };
+
+                    match request.channel {
+                        tl::enums::InputChannel::Channel(c) => Some((c.channel_id, request.id)),
                         _ => None,
                     }
                 });
-                if let Some(channel_id) = channel_id {
+                if let Some((channel_id, message_ids)) = channel_id {
                     updates.push(UpdatesLike::AffectedChannelMessages {
                         affected,
                         channel_id,
+                        message_ids,
                     });
                 } else {
                     updates.push(UpdatesLike::AffectedMessages(affected));

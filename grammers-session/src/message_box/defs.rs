@@ -149,6 +149,7 @@ pub enum UpdatesLike {
     AffectedChannelMessages {
         affected: tl::types::messages::AffectedMessages,
         channel_id: i64,
+        message_ids: Vec<i32>,
     },
     /// Special-case for requests that lead to users being invited.
     InvitedUsers(tl::types::messages::InvitedUsers),
