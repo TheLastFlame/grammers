@@ -156,11 +156,12 @@ impl<R: tl::RemoteCall<Return = tl::enums::messages::Messages>> IterBuffer<R, Me
     async fn fill_buffer(
         &mut self,
         limit: i32,
+        reverse: bool,
         peer: Option<PeerRef>,
     ) -> Result<Option<i32>, InvocationError> {
         use tl::enums::messages::Messages;
 
-        let (messages, users, chats, rate) = match self.client.invoke(&self.request).await? {
+        let (mut messages, users, chats, rate) = match self.client.invoke(&self.request).await? {
             Messages::Messages(m) => {
                 self.last_chunk = true;
                 self.total = Some(m.messages.len());
@@ -174,15 +175,19 @@ impl<R: tl::RemoteCall<Return = tl::enums::messages::Messages>> IterBuffer<R, Me
                 // offset_id 132002, limit 2 => we get msg 132000
                 // offset_id 132002, limit 1 => we get msg 132001
                 //
-                // If the highest fetched message ID is lower than or equal to the limit,
-                // there can't be more messages after (highest ID - limit), because the
-                // absolute lowest message ID is 1.
-                self.last_chunk = m.messages.is_empty() || m.messages[0].id() <= limit;
+                // When iterating newest-to-oldest, the highest fetched message ID is
+                // lower than or equal to the limit, there can't be more messages after
+                // (highest ID - limit), because the absolute lowest message ID is 1.
+                self.last_chunk =
+                    m.messages.is_empty() || (!reverse && m.messages[0].id() <= limit);
+
                 self.total = Some(m.count as usize);
+
                 (m.messages, m.users, m.chats, m.next_rate)
             }
             Messages::ChannelMessages(m) => {
-                self.last_chunk = m.messages.is_empty() || m.messages[0].id() <= limit;
+                self.last_chunk =
+                    m.messages.is_empty() || (!reverse && m.messages[0].id() <= limit);
                 self.total = Some(m.count as usize);
                 (m.messages, m.users, m.chats, None)
             }
@@ -190,6 +195,10 @@ impl<R: tl::RemoteCall<Return = tl::enums::messages::Messages>> IterBuffer<R, Me
                 panic!("API returned Messages::NotModified even though hash = 0")
             }
         };
+
+        if reverse {
+            messages.reverse();
+        }
 
         let peers = self.client.build_peer_map(users, chats).await;
 
@@ -205,11 +214,14 @@ impl<R: tl::RemoteCall<Return = tl::enums::messages::Messages>> IterBuffer<R, Me
 }
 
 /// Iterator returned by [`Client::iter_messages`].
-pub type MessageIter = IterBuffer<tl::functions::messages::GetHistory, Message>;
+pub struct MessageIter {
+    inner: IterBuffer<tl::functions::messages::GetHistory, Message>,
+    reverse: bool,
+}
 
 impl MessageIter {
     fn new(client: &Client, peer: PeerRef) -> Self {
-        Self::from_request(
+        let inner = IterBuffer::from_request(
             client,
             MAX_LIMIT,
             tl::functions::messages::GetHistory {
@@ -222,27 +234,43 @@ impl MessageIter {
                 min_id: 0,
                 hash: 0,
             },
-        )
+        );
+
+        Self {
+            inner,
+            reverse: false,
+        }
     }
 
-    /// Changes the message identifier upper bound.
+    /// Changes the starting message ID (exclusive).
     pub fn offset_id(mut self, offset: i32) -> Self {
-        self.request.offset_id = offset;
+        self.inner.request.offset_id = offset;
         self
     }
 
-    /// Changes the message send date upper bound.
-    pub fn max_date(mut self, offset: i32) -> Self {
-        self.request.offset_date = offset;
+    /// Changes the starting message date.
+    pub fn offset_date(mut self, offset: i32) -> Self {
+        self.inner.request.offset_date = offset;
         self
     }
 
-    /// Determines how many messages there are in total.
+    /// Changes the order to oldest-to-newest. (default is newest-to-oldest)
+    pub fn reverse(mut self, reverse: bool) -> Self {
+        self.reverse = reverse;
+        self
+    }
+
+    pub fn limit(mut self, limit: usize) -> Self {
+        self.inner = self.inner.limit(limit);
+        self
+    }
+
+    /// Determines the total number of messages in the chat.
     ///
     /// This only performs a network call if `next` has not been called before.
     pub async fn total(&mut self) -> Result<usize, InvocationError> {
-        self.request.limit = 1;
-        self.get_total().await
+        self.inner.request.limit = 1;
+        self.inner.get_total().await
     }
 
     /// Returns the next `Message` from the internal buffer, filling the buffer previously if it's
@@ -250,22 +278,37 @@ impl MessageIter {
     ///
     /// Returns `None` if the `limit` is reached or there are no messages left.
     pub async fn next(&mut self) -> Result<Option<Message>, InvocationError> {
-        if let Some(result) = self.next_raw() {
+        if let Some(result) = self.inner.next_raw() {
             return result;
         }
 
-        self.request.limit = self.determine_limit(MAX_LIMIT);
-        self.fill_buffer(self.request.limit, Some(self.request.peer.clone().into()))
+        self.inner.request.limit = self.inner.determine_limit(MAX_LIMIT);
+        let request = &mut self.inner.request;
+        if self.reverse {
+            request.add_offset = -request.limit;
+            request.min_id = request.offset_id;
+            if request.offset_id == 0 && request.offset_date == 0 {
+                // With no explicit offset, start from the oldest available page.
+                request.offset_id = 1;
+                request.add_offset = -request.limit + 1; // +1 to include the first message (ID=1)
+            }
+        }
+        self.inner
+            .fill_buffer(
+                self.inner.request.limit,
+                self.reverse,
+                Some(self.inner.request.peer.clone().into()),
+            )
             .await?;
 
         // Don't bother updating offsets if this is the last time stuff has to be fetched.
-        if !self.last_chunk && !self.buffer.is_empty() {
-            let last = &self.buffer[self.buffer.len() - 1];
-            self.request.offset_id = last.id();
-            self.request.offset_date = last.date_timestamp();
+        if !self.inner.last_chunk && !self.inner.buffer.is_empty() {
+            let last = &self.inner.buffer[self.inner.buffer.len() - 1];
+            self.inner.request.offset_id = last.id();
+            self.inner.request.offset_date = last.date_timestamp();
         }
 
-        Ok(self.pop_item())
+        Ok(self.inner.pop_item())
     }
 }
 
@@ -382,8 +425,12 @@ impl SearchIter {
         }
 
         self.request.limit = self.determine_limit(MAX_LIMIT);
-        self.fill_buffer(self.request.limit, Some(self.request.peer.clone().into()))
-            .await?;
+        self.fill_buffer(
+            self.request.limit,
+            false,
+            Some(self.request.peer.clone().into()),
+        )
+        .await?;
 
         // Don't bother updating offsets if this is the last time stuff has to be fetched.
         if !self.last_chunk && !self.buffer.is_empty() {
@@ -460,7 +507,7 @@ impl GlobalSearchIter {
         }
 
         self.request.limit = self.determine_limit(MAX_LIMIT);
-        let offset_rate = self.fill_buffer(self.request.limit, None).await?;
+        let offset_rate = self.fill_buffer(self.request.limit, false, None).await?;
 
         // Don't bother updating offsets if this is the last time stuff has to be fetched.
         if !self.last_chunk && !self.buffer.is_empty() {
