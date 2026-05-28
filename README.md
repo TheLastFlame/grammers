@@ -2,6 +2,12 @@
 
 > **ВНИМАНИЕ:** Этот репо лишь зеркало с Codeberg (https://codeberg.org/Lonami/grammers) на Github, для использования с Copilot и DeepWiki.
 
+## GitHub Actions in forks/templates
+
+This repository intentionally ships with no workflows in `.github/workflows/`, so cloned/template repositories stay quiet by default and don't run upstream CI/mirroring jobs by accident.
+
+If you want CI in your own fork, add your own workflow files under `.github/workflows/` (for example, by copying/adapting workflows from the upstream project).
+
 # gramme.rs
 
 A set of Rust crates to interact with Telegram's API, hence the name *(tele)gramme.rs*.
