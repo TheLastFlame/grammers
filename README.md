@@ -6,7 +6,7 @@
 
 This repository intentionally ships with no workflows in `.github/workflows/`, so cloned/template repositories stay quiet by default and don't run upstream CI/mirroring jobs by accident.
 
-If you want CI in your own fork, add your own workflow files under `.github/workflows/` (for example, by copying/adapting workflows from the upstream project).
+If you want CI in your own fork, add your own workflow files under `.github/workflows/` (for example, by copying/adapting workflows from the upstream project: https://codeberg.org/Lonami/grammers/src/branch/master/.github/workflows).
 
 # gramme.rs
 
