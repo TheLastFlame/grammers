@@ -37,6 +37,7 @@ const WORKER_COUNT: usize = 4;
 pub struct DownloadIter {
     client: Client,
     done: bool,
+    size: Option<usize>,
     variant: DownloadIterVariant,
 }
 
@@ -104,7 +105,11 @@ impl DownloadIter {
         loop {
             break match self.client.invoke_in_dc(dc, &request).await {
                 Ok(File::File(f)) => {
-                    if f.bytes.len() < request.limit as usize {
+                    let reached_known_size = self
+                        .size
+                        .is_some_and(|size| request.offset as usize + f.bytes.len() >= size);
+
+                    if reached_known_size || f.bytes.len() < request.limit as usize {
                         self.done = true;
                         if f.bytes.is_empty() {
                             break Ok(None);
@@ -159,12 +164,14 @@ impl Client {
             DownloadIter {
                 client: self.clone(),
                 done: false,
+                size: Some(data.len()),
                 variant: DownloadIterVariant::PreDownloaded(data),
             }
         } else if let Some(location) = downloadable.to_raw_input_location() {
             DownloadIter {
                 client: self.clone(),
                 done: false,
+                size: downloadable.size(),
                 variant: DownloadIterVariant::Request(tl::functions::upload::GetFile {
                     precise: false,
                     cdn_supported: false,
@@ -177,6 +184,7 @@ impl Client {
             DownloadIter {
                 client: self.clone(),
                 done: false,
+                size: None,
                 variant: DownloadIterVariant::PreFailed(io::Error::new(
                     io::ErrorKind::Other,
                     "media not downloadable",
@@ -252,7 +260,7 @@ impl Client {
 
         // Start workers
         let (tx, mut rx) = unbounded_channel();
-        let part_index = Arc::new(tokio::sync::Mutex::new(0));
+        let part_index = Arc::new(tokio::sync::Mutex::<i64>::new(0));
         let mut tasks = vec![];
         let home_dc_id = self.0.session.home_dc_id();
         for _ in 0..workers {
@@ -272,10 +280,10 @@ impl Client {
                         } else {
                             let mut i = part_index.lock().await;
                             *i += 1;
-                            (MAX_CHUNK_SIZE * (*i - 1)) as i64
+                            MAX_CHUNK_SIZE as i64 * (*i - 1)
                         }
                     };
-                    if offset > size as i64 {
+                    if offset >= size as i64 {
                         break;
                     }
                     // Fetch from telegram

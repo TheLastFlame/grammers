@@ -240,6 +240,10 @@ impl Downloadable for Photo {
             ),
         })
     }
+
+    fn size(&self) -> Option<usize> {
+        self.size()
+    }
 }
 
 impl Document {
@@ -818,6 +822,21 @@ impl Media {
         }
     }
 
+    pub fn size(&self) -> Option<usize> {
+        match self {
+            Media::Photo(photo) => photo.size(),
+            Media::Document(document) => document.size(),
+            Media::Sticker(sticker) => sticker.document.size(),
+            Media::Contact(_) => None,
+            Media::Poll(_) => None,
+            Media::Geo(_) => None,
+            Media::Dice(_) => None,
+            Media::Venue(_) => None,
+            Media::GeoLive(_) => None,
+            Media::WebPage(_) => None,
+        }
+    }
+
     pub fn to_raw_input_media(&self) -> Option<tl::enums::InputMedia> {
         match self {
             Media::Photo(photo) => Some(photo.to_raw_input_media().into()),
@@ -848,6 +867,10 @@ impl Downloadable for Media {
             Media::GeoLive(_) => None,
             Media::WebPage(_) => None,
         }
+    }
+
+    fn size(&self) -> Option<usize> {
+        self.size()
     }
 }
 
