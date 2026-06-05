@@ -160,6 +160,14 @@ impl<T: Transport, M: Mtp> Sender<T, M> {
         })
     }
 
+    /// Shutdown the connection.
+    ///
+    /// Any further [`Self::invoke`] or [`Self::step`] will return an error.
+    /// This method is useful if one wants to explicitly handle on-close errors.
+    pub async fn disconnect(&mut self) -> io::Result<()> {
+        self.stream.disconnect().await
+    }
+
     /// Serializes the given request, enqueues it to the internal buffer,
     /// and repeatedly calls [`Self::step`] until a response for it is received.
     pub async fn invoke<R: RemoteCall>(

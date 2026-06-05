@@ -7,6 +7,7 @@
 // except according to those terms.
 
 use log::info;
+use tokio::io::AsyncWriteExt;
 use tokio::net::TcpStream;
 pub use tokio::net::tcp::{ReadHalf, WriteHalf};
 
@@ -100,6 +101,14 @@ impl NetStream {
                 ErrorKind::ConnectionAborted,
                 format!("proxy scheme not supported: {}", scheme),
             )),
+        }
+    }
+
+    pub(crate) async fn disconnect(&mut self) -> std::io::Result<()> {
+        match self {
+            Self::Tcp(stream) => stream.shutdown().await,
+            #[cfg(feature = "proxy")]
+            Self::ProxySocks5(stream) => stream.shutdown().await,
         }
     }
 }
