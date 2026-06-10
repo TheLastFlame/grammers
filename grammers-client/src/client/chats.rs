@@ -795,12 +795,16 @@ impl Client {
         invite_link: &str,
     ) -> Result<Option<Peer>, InvocationError> {
         match Self::parse_invite_link(invite_link) {
-            Some(hash) => Ok(updates_to_chat(
-                self,
-                None,
-                self.invoke(&tl::functions::messages::ImportChatInvite { hash })
-                    .await?,
-            )),
+            Some(hash) => Ok(
+                if let tl::enums::messages::ChatInviteJoinResult::Ok(ok) = self
+                    .invoke(&tl::functions::messages::ImportChatInvite { hash })
+                    .await?
+                {
+                    updates_to_chat(self, None, ok.updates)
+                } else {
+                    None
+                },
+            ),
             None => Err(InvocationError::Rpc(RpcError {
                 code: 400,
                 name: "INVITE_HASH_INVALID".to_string(),
@@ -824,12 +828,16 @@ impl Client {
     ) -> Result<Option<Peer>, InvocationError> {
         let chat: PeerRef = chat.into();
         let channel = chat.into();
-        Ok(updates_to_chat(
-            self,
-            chat.id.bare_id(),
-            self.invoke(&tl::functions::channels::JoinChannel { channel })
-                .await?,
-        ))
+        Ok(
+            if let tl::enums::messages::ChatInviteJoinResult::Ok(ok) = self
+                .invoke(&tl::functions::channels::JoinChannel { channel })
+                .await?
+            {
+                updates_to_chat(self, chat.id.bare_id(), ok.updates)
+            } else {
+                None
+            },
+        )
     }
 
     /// Send a message action (such as typing, uploading photo, or viewing an emoji interaction)

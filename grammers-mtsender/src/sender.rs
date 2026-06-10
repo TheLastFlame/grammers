@@ -88,6 +88,10 @@ fn deserialize_updates_like(update: Vec<u8>) -> tl::deserialize::Result<UpdatesL
                 Ok(UpdatesLike::AffectedMessages(u))
             } else if let Ok(u) = tl::types::messages::InvitedUsers::from_bytes(&update) {
                 Ok(UpdatesLike::InvitedUsers(u))
+            } else if let Ok(tl::enums::messages::ChatInviteJoinResult::Ok(u)) =
+                tl::enums::messages::ChatInviteJoinResult::from_bytes(&update)
+            {
+                Ok(UpdatesLike::ChatInviteJoinResult(u))
             } else {
                 Err(e)
             }

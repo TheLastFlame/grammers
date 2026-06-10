@@ -97,6 +97,7 @@ fn update_short_message(short: tl::types::UpdateShortMessage) -> tl::types::Upda
                 suggested_post: None,
                 schedule_repeat_period: None,
                 summary_from_language: None,
+                rich_message: None,
             }
             .into(),
             pts: short.pts,
@@ -169,6 +170,7 @@ fn update_short_chat_message(
                 suggested_post: None,
                 schedule_repeat_period: None,
                 summary_from_language: None,
+                rich_message: None,
             }
             .into(),
             pts: short.pts,
@@ -285,6 +287,7 @@ pub(super) fn adapt(updates: UpdatesLike) -> Result<tl::types::UpdatesCombined, 
                                             reply_to_scheduled: false,
                                             forum_topic: false,
                                             quote: i.quote_offset.is_some(),
+                                            reply_to_ephemeral: false,
                                             reply_to_msg_id: Some(i.reply_to_msg_id),
                                             reply_to_peer_id: i
                                                 .reply_to_peer_id
@@ -339,6 +342,7 @@ pub(super) fn adapt(updates: UpdatesLike) -> Result<tl::types::UpdatesCombined, 
                         suggested_post: None,
                         schedule_repeat_period: None,
                         summary_from_language: None,
+                        rich_message: None,
                     }
                     .into(),
                     pts: update.pts,
@@ -375,6 +379,7 @@ pub(super) fn adapt(updates: UpdatesLike) -> Result<tl::types::UpdatesCombined, 
             date: 0,
         })),
         UpdatesLike::InvitedUsers(invited) => adapt_updates(invited.updates),
+        UpdatesLike::ChatInviteJoinResult(result) => adapt_updates(result.updates),
         UpdatesLike::ConnectionClosed | UpdatesLike::MalformedUpdates => return Err(Gap),
     }
 }

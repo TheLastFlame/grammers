@@ -635,6 +635,7 @@ impl Client {
                 allow_paid_floodskip: false,
                 allow_paid_stars: None,
                 suggested_post: None,
+                rich_message: None,
             })
             .await
         }?;
@@ -829,6 +830,7 @@ impl Client {
             schedule_date: new_message.schedule_date,
             schedule_repeat_period: None,
             quick_reply_shortcut_id: None,
+            rich_message: None,
         })
         .await?;
 
