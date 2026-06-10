@@ -101,7 +101,7 @@ impl DownloadIter {
         use tl::enums::upload::File;
 
         // TODO handle maybe FILEREF_UPGRADE_NEEDED
-        let mut dc = self.client.0.session.home_dc_id();
+        let mut dc = self.client.0.session.home_dc_id()?;
         loop {
             break match self.client.invoke_in_dc(dc, &request).await {
                 Ok(File::File(f)) => {
@@ -213,7 +213,7 @@ impl Client {
         &self,
         downloadable: &D,
         path: P,
-    ) -> Result<(), io::Error> {
+    ) -> Result<(), InvocationError> {
         // Concurrent downloader
         if let Some((location, size)) = downloadable
             .to_raw_input_location()
@@ -227,7 +227,7 @@ impl Client {
         }
 
         let mut download = self.iter_download(downloadable);
-        Client::load(path, &mut download).await
+        Ok(Client::load(path, &mut download).await?)
     }
 
     #[cfg(feature = "fs")]
@@ -252,17 +252,21 @@ impl Client {
         size: usize,
         path: P,
         workers: usize,
-    ) -> Result<(), io::Error> {
+    ) -> Result<(), InvocationError> {
         // Allocate
-        let mut file = fs::File::create(path).await?;
-        file.set_len(size as u64).await?;
-        file.seek(SeekFrom::Start(0)).await?;
+        let mut file = fs::File::create(path).await.map_err(InvocationError::Io)?;
+        file.set_len(size as u64)
+            .await
+            .map_err(InvocationError::Io)?;
+        file.seek(SeekFrom::Start(0))
+            .await
+            .map_err(InvocationError::Io)?;
 
         // Start workers
         let (tx, mut rx) = unbounded_channel();
         let part_index = Arc::new(tokio::sync::Mutex::<i64>::new(0));
         let mut tasks = vec![];
-        let home_dc_id = self.0.session.home_dc_id();
+        let home_dc_id = self.0.session.home_dc_id()?;
         for _ in 0..workers {
             let location = location.clone();
             let tx = tx.clone();
@@ -341,8 +345,10 @@ impl Client {
 
         // Check if all tasks finished succesfully
         for task in tasks {
-            task.await?
+            let res = task
+                .await
                 .map_err(|e| io::Error::new(io::ErrorKind::Other, e))?;
+            res?;
         }
         Ok(())
     }

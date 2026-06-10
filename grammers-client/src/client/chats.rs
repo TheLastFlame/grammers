@@ -14,8 +14,7 @@ use std::future::Future;
 use std::sync::Arc;
 use std::time::Duration;
 
-use grammers_mtsender::InvocationError;
-use grammers_mtsender::RpcError;
+use grammers_mtsender::{InvocationError, RpcError};
 use grammers_session::types::{PeerId, PeerKind, PeerRef};
 use grammers_tl_types as tl;
 
@@ -907,7 +906,9 @@ impl Client {
         if self.0.configuration.auto_cache_peers {
             for peer in map.values() {
                 if peer.auth().is_some() {
-                    self.0.session.cache_peer(&peer.into()).await;
+                    if let Err(e) = self.0.session.cache_peer(&peer.into()).await {
+                        log::warn!("cache_peer fail: {:?}", e)
+                    }
                 }
             }
         }

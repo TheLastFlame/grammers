@@ -285,10 +285,11 @@ impl PeerId {
     /// # Examples
     ///
     /// ```
-    /// # async fn f(session: &dyn grammers_session::Session, peer_id: grammers_session::types::PeerId) -> Result<(), Box<dyn std::error::Error>> {
+    /// # async fn f(session: &grammers_session::ErasedSession, peer_id: grammers_session::types::PeerId) -> Result<(), Box<dyn std::error::Error>> {
     /// let peer_ref = session
     ///     .peer_ref(peer_id)
     ///     .await
+    ///     .unwrap()
     ///     .unwrap_or(peer_id.to_ambient_ref());
     ///
     /// // Can try using the `peer_ref` to e.g. send messages now, even if no auth was found in cache,

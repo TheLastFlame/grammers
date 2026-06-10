@@ -26,7 +26,7 @@ async fn map_random_ids_to_messages(
     fetched_in: PeerRef,
     random_ids: &[i64],
     updates: tl::enums::Updates,
-) -> Vec<Option<Message>> {
+) -> Result<Vec<Option<Message>>, Box<dyn std::error::Error + Send + Sync>> {
     match updates {
         tl::enums::Updates::Updates(tl::types::Updates {
             updates,
@@ -68,7 +68,7 @@ async fn map_random_ids_to_messages(
                 .map(|message| (message.id(), message))
                 .collect::<HashMap<_, _>>();
 
-            random_ids
+            Ok(random_ids
                 .iter()
                 .map(|rnd| {
                     rnd_to_id
@@ -84,7 +84,7 @@ async fn map_random_ids_to_messages(
                             }
                         })
                 })
-                .collect()
+                .collect())
         }
         _ => panic!("API returned something other than Updates so messages can't be mapped"),
     }
@@ -114,6 +114,7 @@ pub(crate) async fn parse_mention_entities(
                             .session
                             .peer(PeerId::user_unchecked(mention_name.user_id))
                             .await
+                            .unwrap_or_default()
                             .and_then(|peer| peer.auth())
                             .unwrap_or_default()
                             .hash(),
@@ -515,7 +516,7 @@ impl GlobalSearchIter {
             self.request.offset_rate = offset_rate.unwrap_or(0);
             self.request.offset_peer = last
                 .peer_ref()
-                .await
+                .await?
                 .map(|peer| peer.into())
                 .unwrap_or(tl::enums::InputPeer::Empty);
             self.request.offset_id = last.id();
@@ -642,7 +643,7 @@ impl Client {
             tl::enums::Updates::UpdateShortSentMessage(updates) => {
                 let peer = if peer.id.bare_id().is_none() {
                     // from_raw_short_updates needs the peer ID
-                    self.0.session.peer_ref(peer.id).await.unwrap()
+                    self.0.session.peer_ref(peer.id).await?.unwrap()
                 } else {
                     peer
                 };
@@ -657,7 +658,7 @@ impl Client {
                 };
 
                 match map_random_ids_to_messages(self, peer, &[random_id], updates)
-                    .await
+                    .await?
                     .pop()
                     .flatten()
                 {
@@ -789,7 +790,7 @@ impl Client {
             })
             .await?;
 
-        Ok(map_random_ids_to_messages(self, peer, &random_ids, updates).await)
+        Ok(map_random_ids_to_messages(self, peer, &random_ids, updates).await?)
     }
 
     /// Edits an existing message.
@@ -944,7 +945,7 @@ impl Client {
             suggested_post: None,
         };
         let result = self.invoke(&request).await?;
-        Ok(map_random_ids_to_messages(self, peer.into(), &request.random_id, result).await)
+        Ok(map_random_ids_to_messages(self, peer.into(), &request.random_id, result).await?)
     }
 
     /// Gets the [`Message`] to which the input message is replying to.
@@ -994,7 +995,7 @@ impl Client {
                 id: peer_id,
                 auth: PeerAuth::default(), // unused, so no need to bother fetching it
             },
-            PeerKind::Channel => message.peer_ref().await.ok_or(InvocationError::Dropped)?,
+            PeerKind::Channel => message.peer_ref().await?.ok_or(InvocationError::Dropped)?,
         };
         let reply_to_message_id = match message.reply_to_message_id() {
             Some(id) => id,

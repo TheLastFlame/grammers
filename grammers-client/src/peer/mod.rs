@@ -25,6 +25,7 @@ mod user;
 pub use channel::Channel;
 pub use chats::{AdminRightsBuilder, BannedRightsBuilder};
 pub use dialog::Dialog;
+use grammers_mtsender::InvocationError;
 use grammers_session::types::{PeerAuth, PeerId, PeerInfo, PeerRef};
 use grammers_tl_types as tl;
 pub use group::Group;
@@ -112,7 +113,9 @@ impl Peer {
     /// Convert the peer to its reference.
     ///
     /// This is only possible if the peer would be usable on all methods or if it is in the session cache.
-    pub async fn to_ref(&self) -> Option<PeerRef> {
+    pub async fn to_ref(
+        &self,
+    ) -> Result<Option<PeerRef>, Box<dyn std::error::Error + Send + Sync>> {
         match self {
             Self::User(user) => user.to_ref().await,
             Self::Group(group) => group.to_ref().await,
@@ -166,9 +169,12 @@ impl Peer {
     // Return the profile picture or chat photo of this peer, if any.
     //
     // This does not fetch the photo, but it may query the session to fetch the peer information.
-    pub async fn photo(&self, big: bool) -> Option<ChatPhoto> {
-        let peer = self.to_ref().await?.into();
-        match self {
+    pub async fn photo(&self, big: bool) -> Result<Option<ChatPhoto>, InvocationError> {
+        let peer = match self.to_ref().await? {
+            None => return Ok(None),
+            Some(x) => x.into(),
+        };
+        Ok(match self {
             Self::User(user) => user.photo().map(|x| ChatPhoto {
                 raw: tl::enums::InputFileLocation::InputPeerPhotoFileLocation(
                     tl::types::InputPeerPhotoFileLocation {
@@ -196,7 +202,7 @@ impl Peer {
                     },
                 ),
             }),
-        }
+        })
     }
 }
 

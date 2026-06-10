@@ -9,10 +9,10 @@
 use std::sync::Arc;
 
 use grammers_mtsender::SenderPoolHandle;
-use grammers_session::Session;
+use grammers_session::ErasedSession;
 
 pub(crate) struct ClientInner {
-    pub(crate) session: Arc<dyn Session>,
+    pub(crate) session: Arc<ErasedSession>,
     pub(crate) api_id: i32,
     pub(crate) handle: SenderPoolHandle,
     pub(crate) configuration: ClientConfiguration,
