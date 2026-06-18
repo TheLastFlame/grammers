@@ -9,11 +9,10 @@
 use std::collections::HashMap;
 use std::fmt;
 use std::net::AddrParseError;
-use std::path::Path;
 use std::sync::Mutex;
 
-use libsql::{named_params, params};
 use tokio::sync::Mutex as AsyncMutex;
+use turso::{named_params, params};
 
 use crate::types::{
     ChannelKind, ChannelState, DcOption, PeerAuth, PeerId, PeerInfo, PeerKind, UpdateState,
@@ -23,7 +22,7 @@ use crate::{BoxFuture, DEFAULT_DC, KNOWN_DC_OPTIONS, Session};
 
 const VERSION: i64 = 1;
 
-struct Database(libsql::Connection);
+struct Database(turso::Connection);
 
 struct Cache {
     pub home_dc: i32,
@@ -40,7 +39,7 @@ pub struct SqliteSession {
 pub enum SqliteSessionError {
     Poisoned,
     AddrParse(std::net::AddrParseError),
-    Sql(libsql::Error),
+    Sql(turso::Error),
     InvalidAuthKeyLength(usize),
 }
 
@@ -65,8 +64,8 @@ impl From<AddrParseError> for SqliteSessionError {
     }
 }
 
-impl From<libsql::Error> for SqliteSessionError {
-    fn from(x: libsql::Error) -> Self {
+impl From<turso::Error> for SqliteSessionError {
+    fn from(x: turso::Error) -> Self {
         Self::Sql(x)
     }
 }
@@ -82,7 +81,7 @@ enum PeerSubtype {
 }
 
 impl Database {
-    async fn init(&self) -> libsql::Result<()> {
+    async fn init(&mut self) -> turso::Result<()> {
         let mut user_version: i64 = self
             .fetch_one("PRAGMA user_version", params![], |row| row.get(0))
             .await?
@@ -104,7 +103,7 @@ impl Database {
         Ok(())
     }
 
-    async fn migrate_v0_to_v1(&self) -> libsql::Result<()> {
+    async fn migrate_v0_to_v1(&mut self) -> turso::Result<()> {
         let transaction = self.begin_transaction().await?;
         transaction
             .execute(
@@ -159,40 +158,40 @@ impl Database {
         Ok(())
     }
 
-    async fn begin_transaction(&self) -> libsql::Result<libsql::Transaction> {
+    async fn begin_transaction(&mut self) -> turso::Result<turso::transaction::Transaction<'_>> {
         self.0.transaction().await
     }
 
     async fn fetch_one<
         T,
-        P: libsql::params::IntoParams,
-        F: FnOnce(libsql::Row) -> libsql::Result<T>,
+        P: turso::params::IntoParams,
+        F: FnOnce(turso::Row) -> turso::Result<T>,
     >(
         &self,
         statement: &str,
         params: P,
         select: F,
-    ) -> libsql::Result<Option<T>> {
+    ) -> turso::Result<Option<T>> {
         let mut statement = self.0.prepare(statement).await?;
         let result = statement.query_row(params).await;
         match result {
             Ok(value) => Ok(Some(select(value)?)),
-            Err(libsql::Error::QueryReturnedNoRows) => Ok(None),
+            Err(turso::Error::QueryReturnedNoRows) => Ok(None),
             Err(e) => Err(e),
         }
     }
 
     async fn fetch_all<
         T,
-        P: libsql::params::IntoParams,
-        F: FnMut(libsql::Row) -> Result<T, SqliteSessionError>,
+        P: turso::params::IntoParams,
+        F: FnMut(turso::Row) -> Result<T, SqliteSessionError>,
     >(
         &self,
         statement: &str,
         params: P,
         mut select: F,
     ) -> Result<Vec<T>, SqliteSessionError> {
-        let statement = self.0.prepare(statement).await?;
+        let mut statement = self.0.prepare(statement).await?;
         let mut rows = statement.query(params).await?;
         let mut result = Vec::new();
         while let Some(row) = rows.next().await? {
@@ -205,9 +204,9 @@ impl Database {
 impl SqliteSession {
     /// Open a connection to the SQLite database at `path`,
     /// creating one if it doesn't exist.
-    pub async fn open<P: AsRef<Path>>(path: P) -> Result<Self, SqliteSessionError> {
-        let conn = libsql::Builder::new_local(path).build().await?.connect()?;
-        let db = Database(conn);
+    pub async fn open(path: &str) -> Result<Self, SqliteSessionError> {
+        let conn = turso::Builder::new_local(path).build().await?.connect()?;
+        let mut db = Database(conn);
         db.init().await?;
 
         let home_dc = db
@@ -268,11 +267,12 @@ impl Session for SqliteSession {
         Box::pin(async move {
             ok?;
 
-            let transaction = self.database.lock().await.begin_transaction().await?;
+            let mut db = self.database.lock().await;
+            let transaction = db.begin_transaction().await?;
             transaction
                 .execute("DELETE FROM dc_home", params![])
                 .await?;
-            let stmt = transaction
+            let mut stmt = transaction
                 .prepare("INSERT INTO dc_home VALUES (:dc_id)")
                 .await?;
             stmt.execute(named_params! {":dc_id": dc_id}).await?;
@@ -328,7 +328,7 @@ impl Session for SqliteSession {
     fn peer(&self, peer: PeerId) -> BoxFuture<'_, Result<Option<PeerInfo>, SqliteSessionError>> {
         Box::pin(async move {
             let db = self.database.lock().await;
-            let map_row = |row: libsql::Row| {
+            let map_row = |row: turso::Row| {
                 let subtype = row.get::<Option<i64>>(2)?.map(|s| s as u8);
                 Ok(match peer.kind() {
                     PeerKind::User => PeerInfo::User {
@@ -387,7 +387,7 @@ impl Session for SqliteSession {
             };
 
             let db = self.database.lock().await;
-            let stmt =
+            let mut stmt =
                 db.0.prepare("INSERT OR REPLACE INTO peer_info VALUES (:peer_id, :hash, :subtype)")
                     .await?;
             let subtype = match peer {
@@ -458,7 +458,20 @@ impl Session for SqliteSession {
         update: UpdateState,
     ) -> BoxFuture<'_, Result<(), SqliteSessionError>> {
         Box::pin(async move {
-            let db = self.database.lock().await;
+            let mut db = self.database.lock().await;
+
+            let previous = match update {
+                UpdateState::Primary { .. } | UpdateState::Secondary { .. } => {
+                    db.fetch_one(
+                        "SELECT * FROM update_state LIMIT 1",
+                        named_params![],
+                        |_| Ok(()),
+                    )
+                    .await?
+                }
+                _ => None,
+            };
+
             let transaction = db.begin_transaction().await?;
 
             match update {
@@ -494,14 +507,6 @@ impl Session for SqliteSession {
                     }
                 }
                 UpdateState::Primary { pts, date, seq } => {
-                    let previous = db
-                        .fetch_one(
-                            "SELECT * FROM update_state LIMIT 1",
-                            named_params![],
-                            |_| Ok(()),
-                        )
-                        .await?;
-
                     if previous.is_some() {
                         transaction
                             .execute(
@@ -527,14 +532,6 @@ impl Session for SqliteSession {
                     }
                 }
                 UpdateState::Secondary { qts } => {
-                    let previous = db
-                        .fetch_one(
-                            "SELECT * FROM update_state LIMIT 1",
-                            named_params![],
-                            |_| Ok(()),
-                        )
-                        .await?;
-
                     if previous.is_some() {
                         transaction
                             .execute(
