@@ -1,3 +1,7 @@
+[![Ask DeepWiki](https://deepwiki.com/badge.svg)](https://deepwiki.com/TheLastFlame/grammers)
+
+> **ВНИМАНИЕ:** Этот репо лишь зеркало с Codeberg (https://codeberg.org/Lonami/grammers) на Github, для использования с Copilot и DeepWiki.
+
 # gramme.rs
 
 A set of Rust crates to interact with Telegram's API, hence the name *(tele)gramme.rs*.
